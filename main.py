@@ -220,11 +220,11 @@ class LoginRequest(BaseModel):
 async def register(request: RegisterRequest):
     try:
         client = get_supabase_client()
-        existing = client.table("users").select("user_id").eq("username", request.username).execute()
+        existing = client.table("merchants").select("merchant_id").eq("username", request.username).execute()
         if existing.data:
             raise HTTPException(status_code=400, detail="Username already taken. Please choose another.")
         hashed_password = pwd_context.hash(request.password)
-        result = client.table("users").insert({
+        result = client.table("merchants").insert({
             "username": request.username,
             "password_hash": hashed_password,
             "shop_name": request.shop_name,
@@ -233,14 +233,14 @@ async def register(request: RegisterRequest):
             "phone_number": request.phone_number,
         }).execute()
         user = result.data[0]
-        token = create_jwt_token(str(user["user_id"]))
+        token = create_jwt_token(str(user["merchant_id"]))
         return {
             "success": True,
             "message": "Account created successfully!",
             "access_token": token,
             "token_type": "bearer",
             "user": {
-                "user_id": user["user_id"],
+                "merchant_id": user["merchant_id"],
                 "username": user["username"],
                 "shop_name": user["shop_name"],
                 "owner_name": user["owner_name"],
@@ -255,19 +255,19 @@ async def register(request: RegisterRequest):
 async def login(request: LoginRequest):
     try:
         client = get_supabase_client()
-        result = client.table("users").select("*").eq("username", request.username).execute()
+        result = client.table("merchants").select("*").eq("username", request.username).execute()
         if not result.data:
             raise HTTPException(status_code=400, detail="Username not found. Please register first.")
         user = result.data[0]
         if not pwd_context.verify(request.password, user["password_hash"]):
             raise HTTPException(status_code=400, detail="Wrong password. Please try again.")
-        token = create_jwt_token(str(user["user_id"]))
+        token = create_jwt_token(str(user["merchant_id"]))
         return {
             "success": True,
             "access_token": token,
             "token_type": "bearer",
             "user": {
-                "user_id": user["user_id"],
+                "merchant_id": user["merchant_id"],
                 "username": user["username"],
                 "shop_name": user["shop_name"],
                 "owner_name": user["owner_name"],
