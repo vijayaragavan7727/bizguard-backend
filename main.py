@@ -192,9 +192,93 @@ class AdvisorChatRequest(BaseModel):
     include_context: bool = Field(True, description="Inject transaction summary into AI prompt")
 
 
+class RegisterRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6, max_length=100)
+    shop_name: str = Field(..., max_length=255)
+    owner_name: Optional[str] = None
+    location: Optional[str] = None
+    phone_number: Optional[str] = None
+
+    @validator("username")
+    def validate_username(cls, v):
+        cleaned = v.strip().lower()
+        if not cleaned.replace("_", "").replace(".", "").isalnum():
+            raise ValueError("Username can only contain letters numbers dots and underscores")
+        return cleaned
+
+class LoginRequest(BaseModel):
+    username: str = Field(..., min_length=3, max_length=50)
+    password: str = Field(..., min_length=6, max_length=100)
+
+
 # ══════════════════════════════════════════════════════════════
 # MODULE 1: AUTH ENDPOINTS
 # ══════════════════════════════════════════════════════════════
+
+@app.post("/api/v1/auth/register", tags=["Authentication"])
+async def register(request: RegisterRequest):
+    try:
+        client = get_supabase_client()
+        existing = client.table("users").select("user_id").eq("username", request.username).execute()
+        if existing.data:
+            raise HTTPException(status_code=400, detail="Username already taken. Please choose another.")
+        hashed_password = pwd_context.hash(request.password)
+        result = client.table("users").insert({
+            "username": request.username,
+            "password_hash": hashed_password,
+            "shop_name": request.shop_name,
+            "owner_name": request.owner_name,
+            "location": request.location,
+            "phone_number": request.phone_number,
+        }).execute()
+        user = result.data[0]
+        token = create_jwt_token(str(user["user_id"]))
+        return {
+            "success": True,
+            "message": "Account created successfully!",
+            "access_token": token,
+            "token_type": "bearer",
+            "user": {
+                "user_id": user["user_id"],
+                "username": user["username"],
+                "shop_name": user["shop_name"],
+                "owner_name": user["owner_name"],
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Registration failed")
+
+@app.post("/api/v1/auth/login", tags=["Authentication"])
+async def login(request: LoginRequest):
+    try:
+        client = get_supabase_client()
+        result = client.table("users").select("*").eq("username", request.username).execute()
+        if not result.data:
+            raise HTTPException(status_code=400, detail="Username not found. Please register first.")
+        user = result.data[0]
+        if not pwd_context.verify(request.password, user["password_hash"]):
+            raise HTTPException(status_code=400, detail="Wrong password. Please try again.")
+        token = create_jwt_token(str(user["user_id"]))
+        return {
+            "success": True,
+            "access_token": token,
+            "token_type": "bearer",
+            "user": {
+                "user_id": user["user_id"],
+                "username": user["username"],
+                "shop_name": user["shop_name"],
+                "owner_name": user["owner_name"],
+                "location": user["location"],
+                "phone_number": user["phone_number"],
+            }
+        }
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=500, detail="Login failed")
 
 @app.post("/api/v1/auth/send-otp", tags=["Authentication"])
 async def send_otp(request: SendOTPRequest):
